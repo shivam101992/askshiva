@@ -8,6 +8,8 @@ class htmlParser:
 		l = line.split()
 		result = []
 		for i in range(len(l)):
+			l[i] = l[i].replace(",", "")
+			l[i] = l[i].replace(".", "")
 			if re.match('^[\w-]+$', l[i]):
 				result.append((l[i].lower(), i))
 
@@ -28,6 +30,26 @@ class htmlParser:
 					tokenLibrary[token][documentTag] = [position]
 
 		return tokenLibrary
+
+	def updateBigramLibrary(self, data):
+		bigramLibrary = {}
+		for documentTag, tagContents in data.items():
+			for tagContent in tagContents:
+				tokenPositionList = self.read_tokens(tagContent)
+				print tokenPositionList
+				for i in range(1, len(tokenPositionList)):
+					bigramToken =  tokenPositionList[i - 1][0]+ " " + tokenPositionList[i][0] 
+					position = tokenPositionList[i - 1][1]
+					if bigramToken in bigramLibrary:
+						if documentTag in bigramLibrary[bigramToken]:
+							bigramLibrary[bigramToken][documentTag].append(position)
+						else:
+							bigramLibrary[bigramToken][documentTag] = [position]
+					else:
+						bigramLibrary[bigramToken] = {}
+						bigramLibrary[bigramToken][documentTag] = [position]
+
+		return bigramLibrary
 
 
 	def parseHTML(self, file):
@@ -99,13 +121,28 @@ class htmlParser:
 				data["a"] = p_str		
 		return data			
 
+
+	def parseHTMLLists(self, file):
+		html = file.read()
+		data = {}
+		parsed_html = BeautifulSoup(html, "lxml")
+		for tag in ["title", "h1", "h2", "h3", "h4", "h5", "h6", "p", "a"]:
+			if parsed_html.find(tag):
+				tagTexts = parsed_html.find_all(tag)
+				for tagText in tagTexts:
+					if tag in data:
+						data[tag].append(tagText.text)
+					else:
+						data[tag] = [tagText.text]
+
+		return data
+
 if __name__ == "__main__":
 	f1 = sys.argv[1]
 	htmlParser = htmlParser()
 	for filename in [f1]:
 		with open(filename) as f:
-			data = htmlParser.parseHTML(f)
-			
-			parsed =  htmlParser.updateTokenLibrary(data)
-			for key, value in parsed.iteritems():
-				print value
+			data = htmlParser.parseHTMLLists(f)
+			bigramLibrary =  htmlParser.updateBigramLibrary(data)
+	for k, v in bigramLibrary.iteritems():
+		print k,v
