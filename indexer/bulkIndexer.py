@@ -5,6 +5,7 @@ from RedisClient import RedisClient
 import glob
 import sys
 from rank.DocumentRank import DocumentRank
+import nltk
 class bulkIndexer:
 	def __init__(self, lowerBound, upperBound):
 		self.bigDictionary = {}
@@ -15,55 +16,22 @@ class bulkIndexer:
 
 		self.dbClient = MongoDbClient()
 		self.redisClient = RedisClient()
-
-	# def getContentFromFolders(self):
-	# 	metaData = []
-	# 	termDocuments = []
-	# 	wordMap = {}
-
-	# 	for folder in self.folders[self.lowerBound: self.upperBound]:
-	# 		folderName = folder.split('/')[-1]
-	# 		files = glob.glob(folder + "/*")
-	# 		for file in files:
-	# 			fileName = file.split('/')[-1]
-	# 			fileIdentifier = folderName + ':' + fileName
-	# 			with open(file, 'r') as f:
-	# 				parsedContent = self.htmlParser.parseHTML(f)
-	# 				tokenizedContent = self.htmlParser.updateTokenLibrary(parsedContent)
-	# 				for word, document in tokenizedContent.iteritems():
-	# 					if word in wordMap:
-	# 						wordMap[word].append(fileIdentifier)
-	# 					else:
-	# 						wordMap[word] = [fileIdentifier]
-	# 					document = {"key" : word + ':' +  fileIdentifier, "value" : document}
-	# 					metaData.append(document)
-	# 		print folder
-	# 	return wordMap, metaData
-
-	# def addTermDocuments(self, wordMap):
-	# 	termDocuments = []
-	# 	for word, listOfDocuments in wordMap.iteritems():
-	# 		document = {"key" : word, "value" : listOfDocuments}
-	# 		termDocuments.append(document)
-	# 	self.dbClient.insertRows(termDocuments, "termDocuments")
-	# 	# self.dbClient.insertRows(documents, "metaData")
-
-	# def addMetaData(self, wordMap, metaData):
-	# 	d = DocumentRank()
-	# 	metaData = d.rankDocuments(wordMap, metaData)
-	# 	self.dbClient.insertRows(metaData, "metaData")
-
+		self.documentLength = {}
+		self.textDictionary = {}
+		# self.f = open("documentFrequencyBigram.txt", "w")
 	###combined postings
 	def createDocument(self, fileId, metaData):
 		return {"documentId" :  fileId,
 				"metaData" : metaData
 		}
 
-	def getContentFromFoldersCombined(self):
+
+
+	def buildUnigramDictionary(self):
 		metaData = []
 		termDocuments = []
 		wordMap = {}
-		self.bigDictionary = {}
+		bigDictionary = {}
 
 		for folder in self.folders[self.lowerBound: self.upperBound]:
 			folderName = folder.split('/')[-1]
@@ -72,31 +40,39 @@ class bulkIndexer:
 				fileName = file.split('/')[-1]
 				fileIdentifier = folderName + ':' + fileName
 				with open(file, 'r') as f:
-					parsedContent = self.htmlParser.parseHTML(f)
+					parsedContent = self.htmlParser.parseHTMLLists(f, fileIdentifier)
 					tokenizedContent = self.htmlParser.updateTokenLibrary(parsedContent)
+					bigramContent = self.htmlParser.updateBigramLibrary(parsedContent)
+					self.textDictionary[fileIdentifier] = parsedContent
+					self.documentLength[fileIdentifier] = len(parsedContent)
 					for word, document in tokenizedContent.iteritems():
 						json = self.createDocument(fileIdentifier, document)
-						if word in self.bigDictionary:
-							
-							self.bigDictionary[word].append(json)
+						if word in bigDictionary:
+							bigDictionary[word].append(json)
 						else:
-							self.bigDictionary[word] = [json]
+							bigDictionary[word] = [json]
 			print folder
+		return bigDictionary
 
 
 	def addDocuments(self, bigDictionary, collectionName = "postingsList"):
 		documents = []
-		# print bigDictionary
 		for word, metaDataList in bigDictionary.iteritems():
 			document = {"key" : word, "value" : metaDataList}
 			documents.append(document)
-		self.redisClient.insertRows(documents, collectionName)	
+		self.dbClient.insertRows(documents, collectionName)	
 
 
+	def addTextDocuments(self):
+		documents = []
+		for documentId, json in self.textDictionary.iteritems():
+			document = {"key" : documentId, "value" : json}
+			documents.append(document)
+		self.dbClient.insertRow(documents, "textDocuments")	
 
 	def buildBigramDictionary(self):
 		bigBigramDictionary = {}
-
+		self.textDictionary = {}
 		for folder in self.folders[self.lowerBound: self.upperBound]:
 			folderName = folder.split('/')[-1]
 			files = glob.glob(folder + "/*")
@@ -104,8 +80,9 @@ class bulkIndexer:
 				fileName = file.split('/')[-1]
 				fileIdentifier = folderName + ':' + fileName
 				with open(file, 'r') as f:
-					parsedContent = self.htmlParser.parseHTMLLists(f)
+					parsedContent = self.htmlParser.parseHTMLLists(f, fileIdentifier)
 					tokenizedContent = self.htmlParser.updateBigramLibrary(parsedContent)
+					self.textDictionary[fileIdentifier] = parsedContent
 					for word, document in tokenizedContent.iteritems():
 						json = self.createDocument(fileIdentifier, document)
 						if word in bigBigramDictionary:
@@ -117,33 +94,56 @@ class bulkIndexer:
 		return bigBigramDictionary
 
 
+	def addDocumentFrequenciesRedis(self):
+		self.unigramCount = self.writeDocumentFrequency("documentFrequency.txt")
+   		self.bigramCount = self.writeDocumentFrequency("documentFrequencyBigram.txt")
+		
+
+	def writeDocumentFrequency(self, filePath):
+		f = open(filePath)
+		documents = []
+		for line in f:
+			token, count = line.split(",")
+			count  = int(count)
+			document = {"key" : token, "value" : count}
+			documents.append(document)
+			print document
+		self.redisClient.insertRows(documents)
+		
+
+
 if __name__ == "__main__":
 	folder = "*"
 	if len(sys.argv) > 1:
 		folderLowerBound = int(sys.argv[1])
 		folderUpperBound = int(sys.argv[2])
 	indexer = bulkIndexer(folderLowerBound, folderUpperBound)
-	#wordMap, metaData = indexer.getContentFromFolders()
+	# #wordMap, metaData = indexer.getContentFromFolders()
 
-	###ORIGINAL
-	indexer.getContentFromFoldersCombined()
+	# ###ORIGINAL
+	# unigramDictionary = indexer.buildUnigramDictionary()
 	d = DocumentRank()
-	bigDictionary = d.rankDocumentsCombined(indexer.bigDictionary)
-	indexer.addDocuments(bigDictionary)
+	# bigDictionary = d.rankDocumentsCombined(unigramDictionary, indexer.documentLength)
+	# # # "Writing Document Frequencies to file"
+
+	# # # for key, value in d.df.iteritems():
+	# # # 	indexer.f.write(key + "," + str(value) + "\n")
+	# # # print "Adding Unigram"
+	# indexer.addDocuments(bigDictionary)
+	# # # print "Adding Documents"
+	# # # # indexer.addTextDocuments()
+	# # # print "Building Bigram"
+	bigDictionary = indexer.buildBigramDictionary()
+	# # # print "Rankgin"
+	bigDictionary = d.rankDocumentsCombined(bigDictionary, indexer.documentLength)
+	indexer.addDocuments(bigDictionary, "Bigram")
+	# for key, value in d.dfList.iteritems():
+		# indexer.f.write(key + "," + str(value) + "\n")
+	# indexer.addTextDocuments()
 	###ORIGINAL
 
-	####NEW
-	# d = DocumentRank()
+	####Add Document Frequencies to redis
+	# indexer.addDocumentFrequenciesRedis()
 
-	# bigDictionary = indexer.buildBigramDictionary()
-	# bigDictionary = d.rankDocumentsCombined(bigDictionary)
-	# indexer.addDocuments(bigDictionary, "Bigram")
-	####NEW
-
-	# print "Got Data"
-	# indexer.addTermDocuments(wordMap)
-	# print "Added Term Documents"
-	# indexer.addMetaData(wordMap, metaData)
-	# print "Added MetaData"
 
 

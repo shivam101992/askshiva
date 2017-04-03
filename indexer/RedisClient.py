@@ -6,12 +6,26 @@ class RedisClient:
 
 	def insertRows(self, jsonInputList, collectionName = "metaData"):
 		for jsonInput in jsonInputList:
+			# print jsonInput
 			self.r.set(jsonInput["key"], json.dumps(jsonInput["value"]))
 
 
-	def getResults(self, query, collectionName):
+	def getResults(self, query):
 		print query["key"]
 		result = self.r.get(query["key"])
 		if result:
 			return json.loads(result)
 		return []
+
+	def multiget(self, tokens):
+		if tokens:
+			results = self.r.mget(tokens)
+			if results:
+				counts = []
+				for result in results:
+					if result:
+						counts.append(int(result))
+					else:
+						counts.append(0)
+				return dict(zip(tokens, counts))
+		return {}

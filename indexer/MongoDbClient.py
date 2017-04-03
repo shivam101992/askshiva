@@ -10,10 +10,23 @@ class MongoDbClient:
 	# 	self.dbCombined[collectionName].insert_one(jsonInput)
 
 	def insertRows(self, jsonInputList, collectionName = "metaData"):
+		# return 
 		bulk = self.dbCombined[collectionName].initialize_ordered_bulk_op()
 		for jsonInput in jsonInputList:
 			bulk.insert(jsonInput)
 		bulk.execute()
+
+	def insertRow(self, jsonInputList, collectionName = "metaData"):
+		# return
+		i = 0
+		for jsonInput in jsonInputList:
+			print i
+			i += 1
+			try:
+				self.dbCombined[collectionName].insert_one(jsonInput)
+			except:
+				print "FAILLLLLL"
+
 
 	def findOne(self, collectionName, key, value):
 		return self.dbCombined[collectionName].find_one({key: value})
@@ -31,20 +44,12 @@ class MongoDbClient:
 
 
 	def getResults(self, query, collectionName):
-		print query
-		return self.dbCombined[collectionName].find_one(query)
+		# print query
+
+		# print query
+		result = self.dbCombined[collectionName].find_one(query)
+		return result
 
 
-
-# # document = {"word" : "artificial",  "documentList" : ["1", "5", "9"]}
-
-# metaDataDocument = {"key" : "artificial1", 
-# 					"title": ["1", "10", "5"],
-# 					"h1": ["5", "67", "78"],
-# 					"p" : ["10", "20", "34"]
-# 				}
-
-# addDocumentNumber("termDocuments", "word", "artificial", "1")
-
-# addDocumentNumber("termDocuments", "word", "artificial", "10")
-# insertRow(metaDataDocument, "metaData")
+	def getDocumentsByIds(self, documentIds, collectionName = "textDocuments"):
+		return self.dbCombined[collectionName].find({"key" : {"$in" : documentIds}})
